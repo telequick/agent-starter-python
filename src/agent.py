@@ -7,16 +7,27 @@ from livekit.agents import (
     AgentServer,
     AgentSession,
     JobContext,
-    TurnHandlingOptions,
     cli,
-    inference,
-    room_io,
 )
-from livekit.plugins import ai_coustics
+
+# Self-hosted / ClutchCall deployment: use model plugins instead of LiveKit
+# Inference (which requires LiveKit Cloud), per
+# https://docs.livekit.io/agents/models/#plugins
+from livekit.plugins import deepgram, openai, silero
 
 logger = logging.getLogger("agent")
 
 load_dotenv(".env.local")
+
+# Load the VAD once per process, not per call.
+_vad = None
+
+
+def _get_vad():
+    global _vad
+    if _vad is None:
+        _vad = silero.VAD.load()
+    return _vad
 
 
 class Assistant(Agent):
@@ -24,7 +35,7 @@ class Assistant(Agent):
         super().__init__(
             # A Large Language Model (LLM) is your agent's brain, processing user input and generating a response
             # See all available models at https://docs.livekit.io/agents/models/llm/
-            llm=inference.LLM(model="google/gemma-4-31b-it"),
+            llm=openai.LLM(model="gpt-4.1-mini"),
             # To use a realtime model instead of a voice pipeline, replace the LLM
             # with a RealtimeModel and remove the STT/TTS from the AgentSession
             # (Note: This is for the OpenAI Realtime API. For other providers, see https://docs.livekit.io/agents/models/realtime/)
@@ -99,24 +110,18 @@ async def my_agent(ctx: JobContext):
         "room": ctx.room.name,
     }
 
-    # Set up a voice AI pipeline using OpenAI, Cartesia, Deepgram, and the LiveKit turn detector
+    # Set up a voice AI pipeline using OpenAI, Deepgram, and Silero VAD
     session = AgentSession(
         # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
         # See all available models at https://docs.livekit.io/agents/models/stt/
-        stt=inference.STT(model="deepgram/nova-3", language="multi"),
+        stt=deepgram.STT(model="nova-3", language="multi"),
         # Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
         # See all available models as well as voice selections at https://docs.livekit.io/agents/models/tts/
-        tts=inference.TTS(
-            model="cartesia/sonic-3", voice="9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
-        ),
-        # The LiveKit turn detector determines when the user is done speaking and the agent should respond.
-        # TurnDetector is an end-of-turn model that listens to the user's audio directly, combining
-        # semantic understanding with acoustic cues (intonation, pitch, rhythm) for state-of-the-art accuracy.
-        # AgentSession supplies the required VAD automatically.
-        # See more at https://docs.livekit.io/agents/build/turns
-        turn_handling=TurnHandlingOptions(
-            turn_detection=inference.TurnDetector(),
-        ),
+        tts=openai.TTS(voice="alloy"),
+        # Voice activity detection drives end-of-turn and barge-in for the
+        # self-hosted pipeline (the LiveKit Cloud TurnDetector is not available
+        # off-cloud).
+        vad=_get_vad(),
         # allow the LLM to generate a response while waiting for the end of turn
         # See more at https://docs.livekit.io/agents/build/audio/#preemptive-generation
         preemptive_generation=True,
@@ -126,13 +131,11 @@ async def my_agent(ctx: JobContext):
     await session.start(
         agent=Assistant(),
         room=ctx.room,
-        room_options=room_io.RoomOptions(
-            audio_input=room_io.AudioInputOptions(
-                noise_cancellation=ai_coustics.audio_enhancement(
-                    model=ai_coustics.EnhancerModel.QUAIL_VF_S
-                ),
-            ),
-        ),
+    )
+
+    # Phone callers expect the agent to speak first.
+    await session.generate_reply(
+        instructions="Warmly greet the caller and ask how you can help today."
     )
 
     # # Add a virtual avatar to the session, if desired

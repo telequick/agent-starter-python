@@ -112,6 +112,29 @@ In production, use the `start` command:
 uv run python src/agent.py start
 ```
 
+## Run over ClutchCall (no LiveKit server)
+
+This fork also runs the same agent over [ClutchCall](https://clutchcall.dev)'s
+QUIC transport instead of a LiveKit room: phone calls reach the agent through
+the ClutchCall engine, media rides WebTransport/QUIC datagrams, and no LiveKit
+server or WebRTC stack is involved. The agent code in `src/agent.py` is
+standard livekit-agents code (with LiveKit Inference swapped for model plugins,
+as any self-hosted deployment requires); only `src/clutchcall_worker.py` is
+ClutchCall-specific.
+
+```console
+docker build -f Dockerfile.clutchcall -t cc-starter-agent .
+docker run -d --name cc-starter-agent \
+  -e CC_APP_KEY=ck_... -e CC_SECRET=... -e CC_AGENT=salesbot \
+  -e OPENAI_API_KEY=sk-... -e DEEPGRAM_API_KEY=... \
+  cc-starter-agent
+```
+
+The worker registers the agent by name with the engine and serves inbound
+calls dispatched to it (route a DID to the agent with a ClutchCall
+external-agent config). The transport plugin is published at
+`https://artifacts.clutchcall.dev/pip/simple/` as `livekit-plugins-clutchcall`.
+
 ## Frontend & Telephony
 
 Get started quickly with our pre-built frontend starter apps, or add telephony support:
