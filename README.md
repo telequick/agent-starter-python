@@ -135,6 +135,34 @@ calls dispatched to it (route a DID to the agent with a ClutchCall
 external-agent config). The transport plugin is published at
 `https://artifacts.clutchcall.dev/pip/simple/` as `livekit-plugins-clutchcall`.
 
+### Outbound calling (single + batch)
+
+The same worker also serves calls the platform dials OUT — the engine places
+the call on your trunk and dispatches the answered leg to your registered
+agent exactly like an inbound call (`ctx.room` attributes carry the dialed
+number in `sip.trunkPhoneNumber`). Trigger dials with the LiveKit-shaped API
+in the plugin (`src/outbound.py`):
+
+```console
+export CLUTCHCALL_API_KEY=mpk_...   # console: Settings → API keys, scope mcp:telephony:write
+export CLUTCHCALL_ORG_ID=...
+export CC_TRUNK=my-trunk CC_AGENT_ID=71156156
+
+python src/outbound.py +919986398327                        # one call
+python src/outbound.py +91... +91... +91... --cps 2         # batch (paced campaign)
+```
+
+```python
+api = clutchcall.ClutchCallAPI()
+await api.sip.create_sip_participant(sip_trunk_id="my-trunk",
+                                     sip_call_to="+919986398327",
+                                     agent_id="71156156")
+```
+
+Batch runs as an engine-paced campaign (`create_sip_campaign` — calls per
+second + max concurrency enforced server-side; `list_campaigns` /
+`abort_campaign` to watch or stop it).
+
 ## Frontend & Telephony
 
 Get started quickly with our pre-built frontend starter apps, or add telephony support:
