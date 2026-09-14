@@ -96,7 +96,11 @@ async def entrypoint(ctx) -> None:
     session = AgentSession(
         stt=deepgram.STT(model="nova-2-phonecall"),
         llm=openai.LLM(model="gpt-4.1-mini"),
-        tts=openai.TTS(voice="alloy"),
+        # Name the model. `openai.TTS(voice=...)` defaults to tts-1, which
+        # measured ttfb 2230 ms against gpt-4o-mini-tts at 895 ms on the same
+        # text and network — about 1.3 s of extra silence on every turn.
+        # Fixed in agent.py by 8d88a81; this second pipeline kept the default.
+        tts=openai.TTS(model="gpt-4o-mini-tts", voice="alloy"),
         vad=_get_vad(),
     )
 
