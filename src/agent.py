@@ -117,7 +117,16 @@ async def my_agent(ctx: JobContext):
         stt=deepgram.STT(model="nova-3", language="multi"),
         # Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
         # See all available models as well as voice selections at https://docs.livekit.io/agents/models/tts/
-        tts=openai.TTS(voice="alloy"),
+        # `openai.TTS()` defaults to tts-1, which is the single biggest source
+        # of turn latency on a phone call. Measured from the worker container
+        # on 2026-09-14, same text, same network, PCM out:
+        #
+        #   tts-1             ttfb 2230 ms   total 2999 ms
+        #   gpt-4o-mini-tts   ttfb  895 ms   total 1564 ms
+        #
+        # The caller hears nothing until the first byte arrives, so ttfb is the
+        # number that matters: ~1.3 s off every turn for a one-word change.
+        tts=openai.TTS(model="gpt-4o-mini-tts", voice="alloy"),
         # Voice activity detection drives end-of-turn and barge-in for the
         # self-hosted pipeline (the LiveKit Cloud TurnDetector is not available
         # off-cloud).
